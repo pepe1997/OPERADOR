@@ -6,6 +6,7 @@ let mapaLPN = new Map();
 let cacheAsignacion = null;
 let vistaActual = "reserva";
 let estadoOperarios = JSON.parse(localStorage.getItem("asignacion_estadoOperarios") || "{}");
+let fechaPedidoSeleccionada = "";
 
 function limpiarCodigo(valor) {
   if (valor === null || valor === undefined) return "";
@@ -650,6 +651,16 @@ function totalizarPedido(resumen) {
   });
 }
 
+function cambiarFechaDashboardPedido(fecha) {
+  fechaPedidoSeleccionada = fechaPedidoSeleccionada === fecha ? "" : fecha;
+  verDashboardPedido();
+}
+
+function limpiarFechaDashboardPedido() {
+  fechaPedidoSeleccionada = "";
+  verDashboardPedido();
+}
+
 function crearLineaSvg(resumen, nombreCampo, color, maxCompartido) {
   const width = 520;
   const height = 210;
@@ -761,7 +772,10 @@ function barrasDistribucionNoAsignado(resumenAsignacion) {
 
 function verDashboardPedido() {
   const resumenFechas = agruparPedidoPorFecha();
-  const total = totalizarPedido(resumenFechas);
+  const resumenFiltrado = fechaPedidoSeleccionada
+    ? resumenFechas.filter(r => r.fecha === fechaPedidoSeleccionada)
+    : resumenFechas;
+  const total = totalizarPedido(resumenFiltrado);
   const asignacion = procesarDatos().resumen;
   const pAsignacion = porcentaje(total.asignado, total.asignable);
   const pEmpaque = porcentaje(total.empacado, total.asignado);
@@ -773,9 +787,12 @@ function verDashboardPedido() {
       <div class="section-head">
         <div>
           <h2>Dashboard pedido</h2>
-          <p>Seguimiento por fecha del flujo solicitado, asignado, empacado y enviado.</p>
+          <p>${fechaPedidoSeleccionada ? `Vista filtrada por ${fechaPedidoSeleccionada}.` : "Seguimiento por fecha del flujo solicitado, asignado, empacado y enviado."}</p>
         </div>
-        <button class="compact" onclick="descargarImagenId('contenido', 'dashboard-pedido')">Imagen</button>
+        <div class="actions-inline">
+          ${fechaPedidoSeleccionada ? `<button class="compact ghost" onclick="limpiarFechaDashboardPedido()">Ver total</button>` : ""}
+          <button class="compact" onclick="descargarImagenId('contenido', 'dashboard-pedido')">Imagen</button>
+        </div>
       </div>
 
       <div class="pedido-kpis">
@@ -807,7 +824,7 @@ function verDashboardPedido() {
               </thead>
               <tbody>
                 ${resumenFechas.map(r => `
-                  <tr>
+                  <tr class="clickable-row ${fechaPedidoSeleccionada === r.fecha ? "selected-row" : ""}" onclick="cambiarFechaDashboardPedido('${r.fecha}')">
                     <td><strong>${r.fecha}</strong></td>
                     <td>${formatoDecimal(r.solicitado)}</td>
                     <td>${formatoDecimal(r.asignable)}</td>
@@ -839,7 +856,7 @@ function verDashboardPedido() {
               <span><b class="dot brecha"></b>No asignado</span>
             </div>
           </div>
-          ${crearTendenciaPedido(resumenFechas)}
+          ${crearTendenciaPedido(resumenFiltrado)}
         </div>
 
         <div class="insight-card">
@@ -858,8 +875,8 @@ function verDashboardPedido() {
         </div>
         <div class="metric-panel">
           <span>Pedidos con fecha</span>
-          <strong>${resumenFechas.length}</strong>
-          <small>Dias detectados en FECHA_ORDEN</small>
+          <strong>${resumenFiltrado.length}</strong>
+          <small>${fechaPedidoSeleccionada ? "Fecha seleccionada" : "Dias detectados en FECHA_ORDEN"}</small>
         </div>
         <div class="metric-panel">
           <span>Reserva sugerida</span>
@@ -1393,22 +1410,45 @@ function descargarExcel(tipo) {
 
   if (tipo === "sinStock") {
     html += "<tr><th>CODIGO_ALT</th><th>CODIGO</th><th>DESCRIPCION</th><th>BULTOS</th><th>ESTADO</th></tr>";
-    html += data.map(d => `<tr><td>${d.codigoAlt || ""}</td><td style="mso-number-format:'\\@';">${d.codigo}</td><td>${d.desc}</td><td>${d.bultos}</td><td>${d.estado}</td></tr>`).join("");
+    html += data.map(d => `<tr>${celdaExcelTexto(d.codigoAlt || "")}${celdaExcelTexto(d.codigo)}<td>${d.desc}</td><td>${d.bultos}</td><td>${d.estado}</td></tr>`).join("");
   } else if (tipo === "analisis") {
     html += "<tr><th>CODIGO</th><th>DESCRIPCION</th><th>REQUERIDO</th><th>STOCK_RESERVA</th><th>STOCK_OTRAS</th><th>ASIG_RESERVA</th><th>ASIG_OTRAS</th><th>SIN_COBERTURA</th></tr>";
-    html += data.map(d => `<tr><td style="mso-number-format:'\\@';">${d.codigo}</td><td>${d.desc}</td><td>${d.total}</td><td>${d.stockReserva}</td><td>${d.stockOtras}</td><td>${d.asignadoReserva}</td><td>${d.asignadoOtras}</td><td>${d.sinCobertura}</td></tr>`).join("");
+    html += data.map(d => `<tr>${celdaExcelTexto(d.codigo)}<td>${d.desc}</td><td>${d.total}</td><td>${d.stockReserva}</td><td>${d.stockOtras}</td><td>${d.asignadoReserva}</td><td>${d.asignadoOtras}</td><td>${d.sinCobertura}</td></tr>`).join("");
   } else {
     html += "<tr><th>LPN</th><th>CODIGO</th><th>DESCRIPCION</th><th>UBICACION</th><th>REQ</th><th>STOCK</th><th>ASIGNAR</th><th>RESTANTE</th></tr>";
-    html += data.map(d => `<tr><td style="mso-number-format:'\\@';">${d.lpn}</td><td style="mso-number-format:'\\@';">${d.codigo}</td><td>${d.desc}</td><td>${d.ubicacion || ""}</td><td>${d.requerido}</td><td>${d.bultos}</td><td>${d.asignar}</td><td>${d.restante}</td></tr>`).join("");
+    html += data.map(d => `<tr>${celdaExcelTexto(d.lpn)}${celdaExcelTexto(d.codigo)}<td>${d.desc}</td><td>${d.ubicacion || ""}</td><td>${d.requerido}</td><td>${d.bultos}</td><td>${d.asignar}</td><td>${d.restante}</td></tr>`).join("");
   }
 
   html += "</table>";
 
-  const blob = new Blob([html], { type: "application/vnd.ms-excel" });
+  const blob = new Blob([prepararHtmlExcel(html)], { type: "application/vnd.ms-excel" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `${tipo}.xls`;
   a.click();
+}
+
+function celdaExcelTexto(valor) {
+  return `<td style="mso-number-format:'\\@';">${valor ?? ""}</td>`;
+}
+
+function prepararHtmlExcel(html) {
+  return `
+    <meta charset="UTF-8">
+    <style>.excel-text{mso-number-format:"\\@";}td.excel-text{mso-number-format:"\\@";}</style>
+  ` + String(html || "").replace(/<td([^>]*)>([\s\S]*?)<\/td>/gi, (match, attrs, contenido) => {
+    const texto = contenido.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+    const esCodigoLargo = /^[0-9]{10,}$/.test(texto);
+    const esCientifico = /^[0-9]+(?:\.[0-9]+)?E\+[0-9]+$/i.test(texto);
+    if (!esCodigoLargo && !esCientifico) return match;
+    const attrsTexto = /style\s*=/.test(attrs)
+      ? attrs.replace(/style\s*=\s*["']([^"']*)["']/i, `style="$1;mso-number-format:'\\@';"`)
+      : `${attrs} style="mso-number-format:'\\@';"`;
+    if (/class\s*=/.test(attrsTexto)) {
+      return `<td${attrsTexto.replace(/class\s*=\s*["']([^"']*)["']/i, `class="$1 excel-text"`)}>${contenido}</td>`;
+    }
+    return `<td${attrsTexto} class="excel-text">${contenido}</td>`;
+  });
 }
 
 function exportarNoAsignados() {
