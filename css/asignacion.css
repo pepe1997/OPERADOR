@@ -35,6 +35,7 @@ body {
   place-items: center;
   padding: 24px;
   background:
+    radial-gradient(circle at 24% 18%, rgba(255, 255, 255, 0.14), transparent 28%),
     linear-gradient(135deg, rgba(24, 34, 48, 0.96), rgba(49, 95, 114, 0.92)),
     #182230;
 }
@@ -48,20 +49,47 @@ body {
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
 }
 
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-row strong,
+.brand-row span {
+  display: block;
+}
+
+.brand-row strong {
+  font-size: 18px;
+}
+
+.brand-row span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.login-brand-row {
+  margin-bottom: 18px;
+}
+
 .login-mark,
 .brand-mark {
-  width: 42px;
+  width: 56px;
   height: 42px;
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--nav), var(--accent));
   color: white;
   font-weight: 800;
+  font-size: 13px;
 }
 
 .login-card h1 {
-  margin: 18px 0 6px;
+  margin: 0 0 6px;
   font-size: 28px;
 }
 

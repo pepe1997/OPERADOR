@@ -3,16 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Asignacion independiente</title>
+  <title>ANC Logistica | Asignacion Operacional</title>
   <link rel="stylesheet" href="css/asignacion.css">
 </head>
 <body>
   <script src="js/asignacion.js"></script>
   <section id="loginView" class="login-view">
     <form class="login-card" onsubmit="login(event)">
-      <div class="login-mark">A</div>
-      <h1>Asignacion</h1>
-      <p>Ingresa para cargar el modulo operativo.</p>
+      <div class="brand-row login-brand-row">
+        <div class="login-mark">ANC</div>
+        <div>
+          <strong>ANC Logistica</strong>
+          <span>Operacion Logistica</span>
+        </div>
+      </div>
+      <h1>Asignacion Operacional</h1>
+      <p>Reporte logistico para cobertura, reserva, paletero y sin stock.</p>
       <label>
         Usuario
         <input id="usuario" type="text" autocomplete="username" required>
@@ -30,7 +36,7 @@
     <div class="workspace">
       <header class="topbar">
         <div>
-          <strong>Panel operativo</strong>
+          <strong>ANC Logistica</strong>
           <span id="estadoCarga">Esperando carga...</span>
         </div>
         <div class="topbar-actions">

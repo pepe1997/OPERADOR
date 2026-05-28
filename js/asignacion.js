@@ -14,16 +14,24 @@ function limpiarCodigo(valor) {
 }
 
 function numeroReal(valor) {
-  let txt = String(valor || "").trim().replace(",", ".");
+  if (valor === null || valor === undefined) return 0;
+  let txt = String(valor).trim().replace(",", ".");
   if (txt === "") return 0;
-  let n = parseFloat(txt);
+  let n = Number(txt);
   return Number.isFinite(n) ? n : 0;
 }
 
 function formatoDecimal(valor) {
-  return Number(valor || 0).toLocaleString("es-PE", {
+  const n = Number(valor || 0);
+  if (!Number.isFinite(n)) return "0";
+  // Para valores muy pequeños como 0.000000000008
+  if (n > 0 && n < 0.001) {
+    return n.toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
+  }
+  // Para decimales normales como 7.5
+  return n.toLocaleString("es-PE", {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2
+    maximumFractionDigits: 3
   });
 }
 
@@ -314,8 +322,8 @@ function abrirAsignacion() {
   document.getElementById("modulo").innerHTML = `
     <div class="module-head">
       <div>
-        <h1>Asignacion inteligente</h1>
-        <p>Lectura operativa de pedido pendiente, cobertura y ubicaciones disponibles.</p>
+        <h1>Asignacion operacional</h1>
+        <p>ANC Logistica | Lectura operativa de pedido pendiente, cobertura y ubicaciones disponibles.</p>
       </div>
       <button class="soft" onclick="exportarNoAsignados()">Exportar no asignados</button>
     </div>
@@ -723,21 +731,23 @@ function crearTendenciaPedido(resumen) {
 }
 
 function donutPedido(asignado, noAsignado) {
+  asignado = numeroReal(asignado);
+  noAsignado = numeroReal(noAsignado);
   const total = asignado + noAsignado;
-  const pAsignado = porcentaje(asignado, total);
-  const pNoAsignado = 100 - pAsignado;
-
+  const pAsignado = total > 0 ? (asignado / total) * 100 : 0;
+  const pNoAsignado = total > 0 ? (noAsignado / total) * 100 : 0;
   return `
     <div class="donut-wrap">
       <div class="donut" style="--p:${pAsignado};"></div>
       <div class="donut-center">
-        <strong>${pAsignado.toFixed(1)}%</strong>
+        <strong>${pAsignado.toFixed(2)}%</strong>
         <span>Asignado</span>
       </div>
     </div>
+
     <div class="legend center">
-      <span><b class="dot reserva"></b>Asignado ${pAsignado.toFixed(1)}%</span>
-      <span><b class="dot brecha"></b>No asignado ${pNoAsignado.toFixed(1)}%</span>
+      <span><b class="dot reserva"></b>Asignado ${pAsignado.toFixed(2)}% (${formatoDecimal(asignado)})</span>
+      <span><b class="dot brecha"></b>No asignado ${pNoAsignado.toFixed(2)}% (${formatoDecimal(noAsignado)})</span>
     </div>
   `;
 }
@@ -902,7 +912,10 @@ function verReserva() {
   let html = `
     <div class="section-head">
       <h2>Reserva operacional</h2>
-      <button onclick="descargarExcel('reserva')">Excel</button>
+      <div class="section-actions">
+        <button onclick="descargarExcelResumenAsignacion()">Excel resumen</button>
+        <button onclick="descargarExcel('reserva')">Excel detalle</button>
+      </div>
     </div>
   `;
 
@@ -1428,8 +1441,100 @@ function descargarExcel(tipo) {
   a.click();
 }
 
+function filasResumenAsignacion() {
+  const mapa = new Map();
+
+  function agregar(ubicacion, codigo, desc, bultos) {
+    const cod = limpiarCodigo(codigo);
+    const descripcion = limpiarCodigo(desc);
+    const valor = numeroReal(bultos);
+    if (!cod || valor <= 0) return;
+    const key = `${ubicacion}|${cod}|${descripcion}`;
+    if (!mapa.has(key)) {
+      mapa.set(key, {
+        ubicacion,
+        codigo: cod,
+        desc: descripcion,
+        bultos: 0
+      });
+    }
+    mapa.get(key).bultos += valor;
+  }
+
+  (window.reservaData || []).forEach(r => agregar("RESERVA", r.codigo, r.desc, r.asignar));
+  (window.sinStockData || []).forEach(r => agregar("SIN STOCK", r.codigo, r.desc, r.bultos));
+  (window.otrasData || []).forEach(r => agregar("PALETERO", r.codigo, r.desc, r.asignar));
+
+  const orden = { "RESERVA": 1, "SIN STOCK": 2, "PALETERO": 3 };
+  return Array.from(mapa.values()).sort((a, b) =>
+    (orden[a.ubicacion] || 99) - (orden[b.ubicacion] || 99) ||
+    a.desc.localeCompare(b.desc, "es")
+  );
+}
+
+function descargarExcelResumenAsignacion() {
+  const data = filasResumenAsignacion();
+  if (!data.length) {
+    alert("No hay datos para exportar");
+    return;
+  }
+
+  let html = `
+    <table border="1" class="tabla-resumen-asignacion">
+      <thead>
+        <tr>
+          <th>UBICACION</th>
+          <th>CODIGO PRODUCTO</th>
+          <th>DESCRIPCION</th>
+          <th>BULTOS REQUERIDOS</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${data.map(r => `
+          <tr>
+            <td>${r.ubicacion}</td>
+            ${celdaExcelTexto(r.codigo)}
+            <td>${r.desc}</td>
+            <td>${formatoDecimal(r.bultos)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+
+  const blob = new Blob([prepararHtmlExcelResumen(html)], { type: "application/vnd.ms-excel" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "resumen-reserva-sin-stock-paletero.xls";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function celdaExcelTexto(valor) {
   return `<td style="mso-number-format:'\\@';">${valor ?? ""}</td>`;
+}
+
+function prepararHtmlExcelResumen(html) {
+  return prepararHtmlExcel(`
+    <style>
+      .tabla-resumen-asignacion th {
+        background: #0f6680;
+        color: #ffffff;
+        font-weight: 700;
+        text-align: center;
+      }
+      .tabla-resumen-asignacion td {
+        border: 1px solid #000000;
+      }
+      .tabla-resumen-asignacion tbody tr:nth-child(odd) td {
+        background: #bfe5ef;
+      }
+      .tabla-resumen-asignacion tbody tr:nth-child(even) td {
+        background: #ffffff;
+      }
+    </style>
+    ${html}
+  `);
 }
 
 function prepararHtmlExcel(html) {
