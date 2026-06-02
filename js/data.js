@@ -66,10 +66,13 @@ async function recargarDatos() {
 function mostrarError(error) {
   console.error(error);
   actualizarEstadoCarga("Error de carga");
+  const mensaje = typeof htmlSeguro === "function"
+    ? htmlSeguro(error.message || error)
+    : String(error.message || error || "");
   document.getElementById("modulo").innerHTML = `
     <div class="error-box">
       <strong>No se pudieron cargar los datos.</strong>
-      <p>${error.message || error}</p>
+      <p>${mensaje}</p>
       <button onclick="recargarDatos()">Intentar de nuevo</button>
     </div>
   `;

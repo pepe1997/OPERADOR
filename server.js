@@ -2,7 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 
-const root = __dirname;
+const root = path.resolve(__dirname);
 const port = Number(process.env.PORT || 8087);
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -11,11 +11,20 @@ const types = {
 };
 
 http.createServer((req, res) => {
-  let pathname = decodeURIComponent(req.url.split("?")[0]);
+  let pathname;
+  try {
+    pathname = decodeURIComponent(req.url.split("?")[0]);
+  } catch (error) {
+    res.writeHead(400);
+    res.end("Bad request");
+    return;
+  }
+
   if (pathname === "/") pathname = "/index.html";
 
-  const file = path.join(root, pathname);
-  if (!file.startsWith(root)) {
+  const file = path.resolve(root, `.${pathname}`);
+  const dentroDelProyecto = file === root || file.startsWith(root + path.sep);
+  if (!dentroDelProyecto) {
     res.writeHead(403);
     res.end("Forbidden");
     return;

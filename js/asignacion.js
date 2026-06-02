@@ -13,6 +13,30 @@ function limpiarCodigo(valor) {
   return String(valor).trim();
 }
 
+function htmlSeguro(valor) {
+  return String(valor ?? "").replace(/[&<>"']/g, caracter => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[caracter]));
+}
+
+function atributoSeguro(valor) {
+  return htmlSeguro(valor);
+}
+
+function argumentoSeguro(valor) {
+  const argumento = JSON.stringify(String(valor ?? ""))
+    .replace(/</g, "\\u003C")
+    .replace(/>/g, "\\u003E")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  return atributoSeguro(argumento);
+}
+
 function numeroReal(valor) {
   if (valor === null || valor === undefined) return 0;
   let txt = String(valor).trim().replace(",", ".");
@@ -48,6 +72,29 @@ function esQuiebre(codigo) {
   return (dataQuiebre || []).some(x => limpiarCodigo(x.CODIGO) === limpiarCodigo(codigo));
 }
 
+function normalizarCodigoAlt(valor) {
+  const limpio = limpiarCodigo(valor);
+  if (!limpio) return "";
+  const soloDigitos = limpio.replace(/\D/g, "");
+  if (!soloDigitos) return limpio;
+  return soloDigitos.padStart(11, "0");
+}
+
+function obtenerCodigoAlt(row) {
+  return normalizarCodigoAlt(campo(row, [
+    "CODIGO_ALT",
+    "CODIGO ALT",
+    "CODIGO_ALTERNO",
+    "CODIGO ALTERNO",
+    "CODIGO_ALTERNATIVO",
+    "CODIGO ALTERNATIVO",
+    "Cod Alternat",
+    "COD ALTERNAT",
+    "COD_ALT",
+    "COD ALT"
+  ]));
+}
+
 function construirMapaLPN() {
   mapaLPN = new Map();
 
@@ -73,10 +120,12 @@ function obtenerPedido() {
       mapa.set(codigo, {
         codigo,
         desc: row.DESCRIPCION || "",
+        codigoAlt: obtenerCodigoAlt(row),
         total: 0
       });
     }
 
+    if (!mapa.get(codigo).codigoAlt) mapa.get(codigo).codigoAlt = obtenerCodigoAlt(row);
     mapa.get(codigo).total += cantidad;
   }
 
@@ -248,7 +297,7 @@ function procesarDatos() {
     if (stockReserva + stockOtras <= 0) {
       const prod = (dataProductos || []).find(x => limpiarCodigo(x.CODIGO) === item.codigo);
       sinStock.push({
-        codigoAlt: prod ? (prod.CODIGO_ALT || "") : "",
+        codigoAlt: item.codigoAlt || (prod ? obtenerCodigoAlt(prod) : ""),
         codigo: item.codigo,
         desc: item.desc,
         bultos: item.total,
@@ -415,6 +464,27 @@ function calcularProgresoReal() {
   };
 }
 
+function calcularProgresoProducto(codigo, tipo = "") {
+  const origen = tipo === "reserva"
+    ? (window.reservaData || [])
+    : tipo === "otras"
+      ? (window.otrasData || [])
+      : [...(window.reservaData || []), ...(window.otrasData || [])];
+  const filas = origen.filter(r => r.codigo === codigo);
+  const total = filas.reduce((acc, r) => acc + numeroReal(r.asignar), 0);
+  const completado = filas.reduce((acc, r) => {
+    const key = `${r.lpn}_${r.codigo}`;
+    return acc + (estadoOperarios[key] === "completo" ? numeroReal(r.asignar) : 0);
+  }, 0);
+
+  return {
+    total,
+    completado,
+    porcentaje: total > 0 ? Math.min(100, (completado / total) * 100) : 0,
+    estado: total > 0 && completado >= total ? "Completado" : completado > 0 ? "En proceso" : "Pendiente"
+  };
+}
+
 function barraProgreso(porcentaje) {
   const valor = Math.max(0, Math.min(100, porcentaje || 0));
   return `
@@ -426,10 +496,10 @@ function barraProgreso(porcentaje) {
 
 function crearBloqueTabla(titulo, data, tipo, id) {
   return `
-    <section class="tabla-bloque" id="${id}">
+    <section class="tabla-bloque" id="${atributoSeguro(id)}">
       <div class="subsection-head">
-        <h3>${titulo}</h3>
-        <button class="compact" onclick="descargarImagenId('${id}', '${id}')">Imagen</button>
+        <h3>${htmlSeguro(titulo)}</h3>
+        <button class="compact" onclick="descargarImagenId(${argumentoSeguro(id)}, ${argumentoSeguro(id)})">Imagen</button>
       </div>
       ${crearTabla(data, tipo)}
     </section>
@@ -470,19 +540,19 @@ function crearTabla(data, tipo) {
             const quiebre = esQuiebre(r.codigo);
 
             return `
-              <tr class="${estado.clase} ${quiebre ? "quiebre" : ""}" data-key="${key}" data-codigo="${r.codigo}">
-                <td><strong>${r.lpn}</strong></td>
-                <td>${r.codigo}</td>
+              <tr class="${atributoSeguro(estado.clase)} ${quiebre ? "quiebre" : ""}" data-key="${atributoSeguro(key)}" data-codigo="${atributoSeguro(r.codigo)}" data-tipo="${atributoSeguro(tipo)}">
+                <td><strong>${htmlSeguro(r.lpn)}</strong></td>
+                <td>${htmlSeguro(r.codigo)}</td>
                 <td>${quiebre ? "SI" : ""}</td>
-                <td>${r.desc}</td>
-                <td><strong>${r.ubicacion || "VACIO"}</strong></td>
+                <td>${htmlSeguro(r.desc)}</td>
+                <td><strong>${htmlSeguro(r.ubicacion || "VACIO")}</strong></td>
                 <td><strong>${formatoDecimal(r.requerido)}</strong></td>
                 <td>${formatoDecimal(r.bultos)}</td>
                 <td class="number">${formatoDecimal(r.asignar)}</td>
                 <td>${formatoDecimal(r.restante)}</td>
                 <td class="progreso-cell">${barraProgreso(p.porcentaje || 0)}</td>
                 <td class="estado-cell"><strong>${estado.texto}</strong></td>
-                <td><button class="compact accion-estado" onclick="cambiarEstadoOperario('${key}', '${tipo}', '${r.codigo}')">${estado.accion}</button></td>
+                <td><button class="compact accion-estado" onclick="cambiarEstadoOperario(${argumentoSeguro(key)}, ${argumentoSeguro(tipo)}, ${argumentoSeguro(r.codigo)})">${estado.accion}</button></td>
               </tr>
             `;
           }).join("")}
@@ -582,8 +652,8 @@ function verDashboard() {
           <tbody>
             ${criticos.map(p => `
               <tr class="bad">
-                <td><strong>${p.codigo}</strong></td>
-                <td>${p.desc}</td>
+                <td><strong>${htmlSeguro(p.codigo)}</strong></td>
+                <td>${htmlSeguro(p.desc)}</td>
                 <td>${formatoDecimal(p.total)}</td>
                 <td>${formatoDecimal(p.asignadoReserva)}</td>
                 <td>${formatoDecimal(p.asignadoOtras)}</td>
@@ -685,7 +755,7 @@ function crearLineaSvg(resumen, nombreCampo, color, maxCompartido) {
   const circulos = valores.map((v, i) => {
     const x = pad + (i * step);
     const y = height - pad - ((v / max) * (height - pad * 2));
-    return `<circle cx="${x}" cy="${y}" r="3.5"><title>${resumen[i].fecha} - ${nombreCampo === "asignado" ? "Asignado" : "No asignado"}: ${formatoDecimal(v)}</title></circle>`;
+    return `<circle cx="${x}" cy="${y}" r="3.5"><title>${htmlSeguro(resumen[i].fecha)} - ${nombreCampo === "asignado" ? "Asignado" : "No asignado"}: ${formatoDecimal(v)}</title></circle>`;
   }).join("");
 
   return `
@@ -714,7 +784,7 @@ function crearTendenciaPedido(resumen) {
   }).join("");
   const labels = resumen.map((r, i) => {
     const x = 26 + (resumen.length > 1 ? i * ((width - 52) / (resumen.length - 1)) : 0);
-    return `<text x="${x}" y="202" text-anchor="middle">${String(r.fecha).slice(0, 5)}</text>`;
+    return `<text x="${x}" y="202" text-anchor="middle">${htmlSeguro(String(r.fecha).slice(0, 5))}</text>`;
   }).join("");
 
   return `
@@ -797,7 +867,7 @@ function verDashboardPedido() {
       <div class="section-head">
         <div>
           <h2>Dashboard pedido</h2>
-          <p>${fechaPedidoSeleccionada ? `Vista filtrada por ${fechaPedidoSeleccionada}.` : "Seguimiento por fecha del flujo solicitado, asignado, empacado y enviado."}</p>
+          <p>${fechaPedidoSeleccionada ? `Vista filtrada por ${htmlSeguro(fechaPedidoSeleccionada)}.` : "Seguimiento por fecha del flujo solicitado, asignado, empacado y enviado."}</p>
         </div>
         <div class="actions-inline">
           ${fechaPedidoSeleccionada ? `<button class="compact ghost" onclick="limpiarFechaDashboardPedido()">Ver total</button>` : ""}
@@ -834,8 +904,8 @@ function verDashboardPedido() {
               </thead>
               <tbody>
                 ${resumenFechas.map(r => `
-                  <tr class="clickable-row ${fechaPedidoSeleccionada === r.fecha ? "selected-row" : ""}" onclick="cambiarFechaDashboardPedido('${r.fecha}')">
-                    <td><strong>${r.fecha}</strong></td>
+                  <tr class="clickable-row ${fechaPedidoSeleccionada === r.fecha ? "selected-row" : ""}" onclick="cambiarFechaDashboardPedido(${argumentoSeguro(r.fecha)})">
+                    <td><strong>${htmlSeguro(r.fecha)}</strong></td>
                     <td>${formatoDecimal(r.solicitado)}</td>
                     <td>${formatoDecimal(r.asignable)}</td>
                     <td>${formatoDecimal(r.asignado)}</td>
@@ -997,10 +1067,10 @@ function crearBloqueBusqueda(titulo, data, id) {
   if (!data.length) return "";
 
   return `
-    <section class="tabla-bloque" id="${id}">
+    <section class="tabla-bloque" id="${atributoSeguro(id)}">
       <div class="subsection-head">
-        <h3>${titulo}</h3>
-        <button class="compact" onclick="descargarImagenId('${id}', '${id}')">Imagen</button>
+        <h3>${htmlSeguro(titulo)}</h3>
+        <button class="compact" onclick="descargarImagenId(${argumentoSeguro(id)}, ${argumentoSeguro(id)})">Imagen</button>
       </div>
       <div class="table-wrap table-wrap-compact">
         <table>
@@ -1016,10 +1086,10 @@ function crearBloqueBusqueda(titulo, data, id) {
           <tbody>
             ${data.map(r => `
               <tr>
-                <td><strong>${r.codigo}</strong></td>
-                <td>${r.desc}</td>
-                <td>${r.ubicacion}</td>
-                <td>${r.lpn}</td>
+                <td><strong>${htmlSeguro(r.codigo)}</strong></td>
+                <td>${htmlSeguro(r.desc)}</td>
+                <td>${htmlSeguro(r.ubicacion)}</td>
+                <td>${htmlSeguro(r.lpn)}</td>
                 <td class="number">${formatoDecimal(r.stock)}</td>
               </tr>
             `).join("")}
@@ -1066,11 +1136,11 @@ function renderBuscadorDetalle() {
         <tbody>
           ${productos.map(p => `
             <tr>
-              <td><strong>${p.codigo}</strong></td>
-              <td>${p.desc}</td>
+              <td><strong>${htmlSeguro(p.codigo)}</strong></td>
+              <td>${htmlSeguro(p.desc)}</td>
               <td>${p.lpns.length}</td>
               <td class="number">${formatoDecimal(p.stock)}</td>
-              <td><button class="compact" onclick="abrirDetalleProductoLpn('${p.codigo}')">Ver</button></td>
+              <td><button class="compact" onclick="abrirDetalleProductoLpn(${argumentoSeguro(p.codigo)})">Ver</button></td>
             </tr>
           `).join("") || `<tr><td colspan="5">Sin resultados.</td></tr>`}
         </tbody>
@@ -1123,8 +1193,8 @@ function abrirDetalleProductoLpn(codigo) {
       <div class="modal-card">
         <div class="section-head">
           <div>
-            <h2>${codigo}</h2>
-            <p>${desc}</p>
+            <h2>${htmlSeguro(codigo)}</h2>
+            <p>${htmlSeguro(desc)}</p>
           </div>
           <button onclick="cerrarModal()">Cerrar</button>
         </div>
@@ -1132,7 +1202,7 @@ function abrirDetalleProductoLpn(codigo) {
           <div><span>LPNs</span><strong>${data.length}</strong></div>
           <div><span>Stock general</span><strong>${formatoDecimal(stock)}</strong></div>
         </div>
-        <input class="search-input" type="search" placeholder="Buscar dentro del producto..." oninput="filtrarDetalleProductoModal(this.value, '${codigo}')">
+        <input class="search-input" type="search" placeholder="Buscar dentro del producto..." oninput="filtrarDetalleProductoModal(this.value, ${argumentoSeguro(codigo)})">
         <div id="detalleProductoModal">
           ${tablaDetalleProducto(data)}
         </div>
@@ -1166,9 +1236,9 @@ function tablaDetalleProducto(data) {
         <tbody>
           ${data.map(l => `
             <tr>
-              <td><strong>${l.lpn}</strong></td>
-              <td>${l.ubicacion}</td>
-              <td>${l.estado}</td>
+              <td><strong>${htmlSeguro(l.lpn)}</strong></td>
+              <td>${htmlSeguro(l.ubicacion)}</td>
+              <td>${htmlSeguro(l.estado)}</td>
               <td class="number">${formatoDecimal(l.stock)}</td>
             </tr>
           `).join("") || `<tr><td colspan="4">Sin LPNs.</td></tr>`}
@@ -1215,20 +1285,18 @@ function verOtras() {
         <tbody>
           ${filas.map(r => {
             const ubicaciones = [...new Set(r.lpns.map(l => l.ubicacion || "VACIO"))].join(", ");
-            const completado = r.lpns.reduce((acc, l) => acc + (estadoOperarios[`${l.lpn}_${l.codigo}`] === "completo" ? l.asignar : 0), 0);
-            const porcentaje = r.requerido > 0 ? Math.min(100, (completado / r.requerido) * 100) : 0;
-            const estado = porcentaje >= 100 ? "Completado" : completado > 0 ? "En proceso" : "Pendiente";
+            const progreso = calcularProgresoProducto(r.codigo, "otras");
 
             return `
-              <tr>
-                <td><strong>${r.codigo}</strong></td>
-                <td>${r.desc}</td>
+              <tr data-codigo="${atributoSeguro(r.codigo)}" data-tipo="otras" data-resumen-producto="otras">
+                <td><strong>${htmlSeguro(r.codigo)}</strong></td>
+                <td>${htmlSeguro(r.desc)}</td>
                 <td class="number">${formatoDecimal(r.requerido)}</td>
                 <td>${r.lpns.length}</td>
-                <td>${ubicaciones}</td>
-                <td>${barraProgreso(porcentaje)}</td>
-                <td><strong>${estado}</strong></td>
-                <td><button class="compact" onclick="verDetalleOtras('${r.codigo}')">Ver</button></td>
+                <td>${htmlSeguro(ubicaciones)}</td>
+                <td class="progreso-cell">${barraProgreso(progreso.porcentaje)}</td>
+                <td class="estado-producto-cell"><strong>${progreso.estado}</strong></td>
+                <td><button class="compact" onclick="verDetalleOtras(${argumentoSeguro(r.codigo)})">Ver</button></td>
               </tr>
             `;
           }).join("")}
@@ -1246,7 +1314,7 @@ function verDetalleOtras(codigo) {
     <div class="modal-backdrop">
       <div class="modal-card">
         <div class="section-head">
-          <h2>${codigo}</h2>
+          <h2>${htmlSeguro(codigo)}</h2>
           <button onclick="cerrarModal()">Cerrar</button>
         </div>
         ${crearTabla(data, "otras")}
@@ -1259,16 +1327,97 @@ function cerrarModal() {
   document.getElementById("modal").innerHTML = "";
 }
 
-function verSinStock() {
-  const data = window.sinStockData || [];
+function obtenerSinStockFiltrado() {
+  const q = limpiarCodigo(document.getElementById("buscadorSinStock")?.value || "").toLowerCase();
+  const filtro = document.getElementById("filtroQuiebreSinStock")?.value || "todos";
 
+  return (window.sinStockData || []).filter(r => {
+    const quiebre = esQuiebre(r.codigo);
+    const coincideFiltro = filtro === "todos" || (filtro === "quiebre" ? quiebre : !quiebre);
+    const texto = [r.codigoAlt, r.codigo, r.desc, r.estado].map(x => limpiarCodigo(x).toLowerCase()).join(" ");
+    return coincideFiltro && (!q || texto.includes(q));
+  });
+}
+
+function filasSinStock(data) {
+  return data.map(r => {
+    const quiebre = esQuiebre(r.codigo);
+    return `
+      <tr class="bad ${quiebre ? "quiebre" : ""}">
+        <td>${htmlSeguro(r.codigoAlt || "")}</td>
+        <td>${htmlSeguro(r.codigo)}</td>
+        <td>${quiebre ? "SI" : ""}</td>
+        <td>${htmlSeguro(r.desc)}</td>
+        <td class="number">${formatoDecimal(r.bultos)}</td>
+        <td><strong>${htmlSeguro(r.estado)}</strong></td>
+      </tr>
+    `;
+  }).join("") || `<tr><td colspan="6">Sin productos sin stock.</td></tr>`;
+}
+
+function renderSinStock() {
+  const data = obtenerSinStockFiltrado();
+  const tbody = document.getElementById("sinStockBody");
+  const contador = document.getElementById("sinStockContador");
+
+  if (tbody) tbody.innerHTML = filasSinStock(data);
+  if (contador) contador.textContent = `${data.length} registros visibles`;
+}
+
+async function copiarSinStockVisible() {
+  const data = obtenerSinStockFiltrado();
+  if (!data.length) {
+    alert("No hay filas visibles para copiar");
+    return;
+  }
+
+  const filas = [
+    ["Codigo alt", "Codigo", "Quiebre", "Descripcion", "Bultos", "Estado"],
+    ...data.map(r => [
+      r.codigoAlt || "",
+      r.codigo || "",
+      esQuiebre(r.codigo) ? "SI" : "",
+      r.desc || "",
+      formatoDecimal(r.bultos),
+      r.estado || ""
+    ])
+  ];
+  const texto = filas.map(fila => fila.join("\t")).join("\n");
+
+  try {
+    await navigator.clipboard.writeText(texto);
+    alert("Tabla copiada al portapapeles");
+  } catch (error) {
+    const area = document.createElement("textarea");
+    area.value = texto;
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+    alert("Tabla copiada al portapapeles");
+  }
+}
+
+function verSinStock() {
   document.getElementById("contenido").innerHTML = `
     <div class="section-head">
-      <h2>Sin stock</h2>
+      <div>
+        <h2>Sin stock</h2>
+        <p id="sinStockContador"></p>
+      </div>
       <div class="section-actions">
+        <button onclick="copiarSinStockVisible()">Copiar tabla</button>
         <button onclick="descargarExcel('sinStock')">Excel</button>
         <button onclick="descargarImagenId('contenido', 'sin-stock')">Imagen</button>
       </div>
+    </div>
+    <div class="filter-row">
+      <input class="search-input" id="buscadorSinStock" type="search" placeholder="Buscar codigo, codigo alt o descripcion..." oninput="renderSinStock()">
+      <select class="filter-select" id="filtroQuiebreSinStock" onchange="renderSinStock()">
+        <option value="todos">Todos</option>
+        <option value="quiebre">Solo quiebre</option>
+        <option value="sinQuiebre">Sin quiebre</option>
+      </select>
     </div>
     <div class="table-wrap">
       <table>
@@ -1276,25 +1425,19 @@ function verSinStock() {
           <tr>
             <th>Codigo alt</th>
             <th>Codigo</th>
+            <th>Quiebre</th>
             <th>Descripcion</th>
             <th>Bultos</th>
             <th>Estado</th>
           </tr>
         </thead>
-        <tbody>
-          ${data.map(r => `
-            <tr class="bad">
-              <td>${r.codigoAlt || ""}</td>
-              <td>${r.codigo}</td>
-              <td>${r.desc}</td>
-              <td class="number">${formatoDecimal(r.bultos)}</td>
-              <td><strong>${r.estado}</strong></td>
-            </tr>
-          `).join("") || `<tr><td colspan="5">Sin productos sin stock.</td></tr>`}
+        <tbody id="sinStockBody">
         </tbody>
       </table>
     </div>
   `;
+
+  renderSinStock();
 }
 
 function verAnalisisRapido() {
@@ -1335,15 +1478,15 @@ function verAnalisisRapido() {
 
             return `
               <tr class="${r.sinCobertura > 0 ? "bad" : ""}">
-                <td><strong>${r.codigo}</strong></td>
-                <td>${r.desc}</td>
+                <td><strong>${htmlSeguro(r.codigo)}</strong></td>
+                <td>${htmlSeguro(r.desc)}</td>
                 <td class="number">${formatoDecimal(r.total)}</td>
                 <td>${formatoDecimal(r.stockReserva)}</td>
                 <td>${formatoDecimal(r.stockOtras)}</td>
                 <td>${formatoDecimal(r.asignadoReserva)}</td>
                 <td>${formatoDecimal(r.asignadoOtras)}</td>
                 <td class="number">${formatoDecimal(r.sinCobertura)}</td>
-                <td><strong>${decision}</strong></td>
+                <td><strong>${htmlSeguro(decision)}</strong></td>
               </tr>
             `;
           }).join("")}
@@ -1379,11 +1522,18 @@ function actualizarFilaEstado(key) {
 }
 
 function actualizarProgresoProducto(codigo) {
-  const progreso = calcularProgreso()[codigo] || { porcentaje: 0 };
-  const filas = document.querySelectorAll(`tr[data-codigo="${CSS.escape(codigo)}"] .progreso-cell`);
+  const filas = document.querySelectorAll(`tr[data-codigo="${CSS.escape(codigo)}"]`);
 
-  filas.forEach(celda => {
+  filas.forEach(fila => {
+    const tipo = fila.dataset.tipo || "";
+    const progreso = calcularProgresoProducto(codigo, tipo);
+    const celda = fila.querySelector(".progreso-cell");
+    if (!celda) return;
+
     celda.innerHTML = barraProgreso(progreso.porcentaje || 0);
+
+    const estadoProducto = fila.querySelector(".estado-producto-cell strong");
+    if (estadoProducto) estadoProducto.textContent = progreso.estado;
   });
 }
 
@@ -1423,13 +1573,13 @@ function descargarExcel(tipo) {
 
   if (tipo === "sinStock") {
     html += "<tr><th>CODIGO_ALT</th><th>CODIGO</th><th>DESCRIPCION</th><th>BULTOS</th><th>ESTADO</th></tr>";
-    html += data.map(d => `<tr>${celdaExcelTexto(d.codigoAlt || "")}${celdaExcelTexto(d.codigo)}<td>${d.desc}</td><td>${d.bultos}</td><td>${d.estado}</td></tr>`).join("");
+    html += data.map(d => `<tr>${celdaExcelTexto(d.codigoAlt || "")}${celdaExcelTexto(d.codigo)}<td>${htmlSeguro(d.desc)}</td><td>${formatoDecimal(d.bultos)}</td><td>${htmlSeguro(d.estado)}</td></tr>`).join("");
   } else if (tipo === "analisis") {
     html += "<tr><th>CODIGO</th><th>DESCRIPCION</th><th>REQUERIDO</th><th>STOCK_RESERVA</th><th>STOCK_OTRAS</th><th>ASIG_RESERVA</th><th>ASIG_OTRAS</th><th>SIN_COBERTURA</th></tr>";
-    html += data.map(d => `<tr>${celdaExcelTexto(d.codigo)}<td>${d.desc}</td><td>${d.total}</td><td>${d.stockReserva}</td><td>${d.stockOtras}</td><td>${d.asignadoReserva}</td><td>${d.asignadoOtras}</td><td>${d.sinCobertura}</td></tr>`).join("");
+    html += data.map(d => `<tr>${celdaExcelTexto(d.codigo)}<td>${htmlSeguro(d.desc)}</td><td>${formatoDecimal(d.total)}</td><td>${formatoDecimal(d.stockReserva)}</td><td>${formatoDecimal(d.stockOtras)}</td><td>${formatoDecimal(d.asignadoReserva)}</td><td>${formatoDecimal(d.asignadoOtras)}</td><td>${formatoDecimal(d.sinCobertura)}</td></tr>`).join("");
   } else {
     html += "<tr><th>LPN</th><th>CODIGO</th><th>DESCRIPCION</th><th>UBICACION</th><th>REQ</th><th>STOCK</th><th>ASIGNAR</th><th>RESTANTE</th></tr>";
-    html += data.map(d => `<tr>${celdaExcelTexto(d.lpn)}${celdaExcelTexto(d.codigo)}<td>${d.desc}</td><td>${d.ubicacion || ""}</td><td>${d.requerido}</td><td>${d.bultos}</td><td>${d.asignar}</td><td>${d.restante}</td></tr>`).join("");
+    html += data.map(d => `<tr>${celdaExcelTexto(d.lpn)}${celdaExcelTexto(d.codigo)}<td>${htmlSeguro(d.desc)}</td><td>${htmlSeguro(d.ubicacion || "")}</td><td>${formatoDecimal(d.requerido)}</td><td>${formatoDecimal(d.bultos)}</td><td>${formatoDecimal(d.asignar)}</td><td>${formatoDecimal(d.restante)}</td></tr>`).join("");
   }
 
   html += "</table>";
@@ -1492,9 +1642,9 @@ function descargarExcelResumenAsignacion() {
       <tbody>
         ${data.map(r => `
           <tr>
-            <td>${r.ubicacion}</td>
+            <td>${htmlSeguro(r.ubicacion)}</td>
             ${celdaExcelTexto(r.codigo)}
-            <td>${r.desc}</td>
+            <td>${htmlSeguro(r.desc)}</td>
             <td>${formatoDecimal(r.bultos)}</td>
           </tr>
         `).join("")}
@@ -1511,7 +1661,7 @@ function descargarExcelResumenAsignacion() {
 }
 
 function celdaExcelTexto(valor) {
-  return `<td style="mso-number-format:'\\@';">${valor ?? ""}</td>`;
+  return `<td style="mso-number-format:'\\@';">${htmlSeguro(valor)}</td>`;
 }
 
 function prepararHtmlExcelResumen(html) {

@@ -1,7 +1,17 @@
 const usuarios = [
-  { user: "admin", pass: "1234", nombre: "Administrador" },
-  { user: "operador", pass: "1234", nombre: "Operador" }
+  { user: "admin", passHash: "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4", nombre: "Administrador" },
+  { user: "operador", passHash: "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4", nombre: "Operador" }
 ];
+
+const DURACION_SESION_MS = 12 * 60 * 60 * 1000;
+
+async function sha256(texto) {
+  const bytes = new TextEncoder().encode(texto);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash))
+    .map(byte => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 function mostrarApp(usuario) {
   document.getElementById("loginView").hidden = true;
@@ -14,12 +24,13 @@ function mostrarLogin() {
   document.getElementById("appView").hidden = true;
 }
 
-function login(event) {
+async function login(event) {
   event.preventDefault();
 
   const user = document.getElementById("usuario").value.trim();
-  const pass = document.getElementById("password").value.trim();
-  const valido = usuarios.find(x => x.user === user && x.pass === pass);
+  const pass = document.getElementById("password").value;
+  const passHash = await sha256(pass);
+  const valido = usuarios.find(x => x.user === user && x.passHash === passHash);
 
   if (!valido) {
     document.getElementById("loginError").textContent = "Usuario o contrasena incorrecta.";
@@ -28,7 +39,8 @@ function login(event) {
 
   localStorage.setItem("asignacion_usuario", JSON.stringify({
     user: valido.user,
-    nombre: valido.nombre
+    nombre: valido.nombre,
+    expira: Date.now() + DURACION_SESION_MS
   }));
 
   mostrarApp(valido);
@@ -50,6 +62,12 @@ function cargarSesion() {
 
   try {
     const usuario = JSON.parse(guardado);
+    if (!usuario.expira || Date.now() > usuario.expira) {
+      localStorage.removeItem("asignacion_usuario");
+      mostrarLogin();
+      return;
+    }
+
     mostrarApp(usuario);
     iniciarAplicacion();
   } catch (error) {
